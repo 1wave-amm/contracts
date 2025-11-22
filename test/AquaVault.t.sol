@@ -4,9 +4,9 @@ pragma solidity ^0.8.17;
 import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {AquaAdapterStorage} from "../../../contracts/adapters/dex/AquaAdapterStorage.sol";
-import {AquaAdapter} from "../../../contracts/adapters/dex/AquaAdapter.sol";
-import {XYCSwap} from "./XYCSwap.sol";
+import {AquaAdapterStorage} from "@factordao/contracts/adapters/dex/AquaAdapterStorage.sol";
+import {AquaAdapter} from "@factordao/contracts/adapters/dex/AquaAdapter.sol";
+import {WaveSwap} from "../src/WaveSwap.sol";
 import {IAqua} from "@1inch/aqua/src/interfaces/IAqua.sol";
 
 /// @title AquaVaultTest
