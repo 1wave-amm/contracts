@@ -21,8 +21,8 @@ contract WaveSwap is AquaApp {
     using Math for uint256;
     using TransientLockLib for TransientLock;
 
-    event SwapExactIn(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
-    event SwapExactOut(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
+    event SwapExactIn(address indexed vault, address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
+    event SwapExactOut(address indexed vault, address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
 
     error InsufficientOutputAmount(uint256 amountOut, uint256 amountOutMin);
     error ExcessiveInputAmount(uint256 amountIn, uint256 amountInMax);
@@ -92,7 +92,7 @@ contract WaveSwap is AquaApp {
         // Automatically call publishPairs on the AquaAdapter (maker) after swap
         IAquaAdapter(strategy.maker).publishPairs();
 
-        emit SwapExactIn(tokenIn, tokenOut, amountIn, amountOut);
+        emit SwapExactIn(strategy.maker, tokenIn, tokenOut, amountIn, amountOut);
     }
 
     function swapExactOut(
@@ -125,7 +125,7 @@ contract WaveSwap is AquaApp {
         // Automatically call publishPairs on the AquaAdapter (maker) after swap
         IAquaAdapter(strategy.maker).publishPairs();
 
-        emit SwapExactOut(tokenIn, tokenOut, amountIn, amountOut);
+        emit SwapExactOut(strategy.maker, tokenIn, tokenOut, amountIn, amountOut);
     }
 
     function _quoteExactIn(Strategy calldata strategy, uint256 balanceIn, uint256 balanceOut, uint256 amountIn)
