@@ -6,7 +6,6 @@ import "forge-std/console2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AquaAdapterStorage} from "@factordao/contracts/adapters/dex/AquaAdapterStorage.sol";
 import {AquaAdapter} from "@factordao/contracts/adapters/dex/AquaAdapter.sol";
-import {WaveSwap} from "../src/WaveSwap.sol";
 import {IAqua} from "@1inch/aqua/src/interfaces/IAqua.sol";
 
 /// @title AquaVaultTest
@@ -23,15 +22,7 @@ contract AquaVaultTest is Test {
     bytes32 public constant AQUA_ADAPTER_STORAGE_SLOT = keccak256("factor.studio.aqua.adapter.storage");
 
     function setUp() public {
-        // Fork Base at the latest block
         vm.createSelectFork("base");
-    }
-
-    /// @notice Get the storage slot for pairExists mapping
-    function _getPairExistsSlot(bytes32 pairHash) internal pure returns (bytes32) {
-        // For mapping(bytes32 => bool), the slot is keccak256(abi.encode(key, baseSlot))
-        // The base slot is at offset 0 in the struct (first mapping)
-        return keccak256(abi.encode(pairHash, uint256(AQUA_ADAPTER_STORAGE_SLOT)));
     }
 
     /// @notice Test if the specified pair hash exists in the vault
@@ -59,10 +50,6 @@ contract AquaVaultTest is Test {
         } else {
             console2.log("[FAIL] Pair does not exist in vault");
         }
-
-        // This test will pass regardless, but logs the result
-        // Uncomment the assertion below if you want the test to fail when pair doesn't exist
-        // assertTrue(exists, "Pair should exist in vault");
     }
 
     /// @notice Test reading pair information if it exists
@@ -88,9 +75,6 @@ contract AquaVaultTest is Test {
         uint256 pairsLength = uint256(pairsLengthValue);
 
         console2.log("Pairs Length:", pairsLength);
-
-        // Note: Reading array elements and structs from storage is complex
-        // For now, we just confirm the pair exists
         console2.log("[INFO] Pair exists in vault storage");
     }
 
@@ -265,16 +249,12 @@ contract AquaVaultTest is Test {
         // DEX address from previous tests
         address dex = 0x191066EE11118d60dF8C18B41E6705bB685c2cB0;
 
-        // Get the adapter address - we need to find which adapter is registered
-        // For now, let's try calling on a known adapter address
-        // Base testing adapter address
         address adapterAddress = 0x87f06faF1F1D9E8fFae12bFFE28A23CC938B9B05;
         AquaAdapter adapter = AquaAdapter(adapterAddress);
 
         console2.log("\n--- Testing on Adapter Address ---");
         console2.log("Adapter Address:", adapterAddress);
 
-        // Try to call getStrategyData on adapter (this will read from adapter's storage, not vault's)
         try adapter.getStrategyData(PAIR_HASH, dex) returns (AquaAdapterStorage.StrategyData memory strategyData) {
             console2.log("[SUCCESS] getStrategyData call on adapter worked!");
             console2.log("Token0:", strategyData.token0);
@@ -292,10 +272,8 @@ contract AquaVaultTest is Test {
         }
 
         console2.log("\n--- Testing on Vault Address ---");
-        // Cast vault to AquaAdapter interface
         AquaAdapter vault = AquaAdapter(payable(VAULT_ADDRESS));
 
-        // Try to call getStrategyData directly on vault
         try vault.getStrategyData(PAIR_HASH, dex) returns (AquaAdapterStorage.StrategyData memory strategyData) {
             console2.log("[SUCCESS] getStrategyData call on vault worked!");
             console2.log("Token0:", strategyData.token0);
@@ -307,23 +285,18 @@ contract AquaVaultTest is Test {
             console2.log("[FAIL] getStrategyData call on vault failed:", reason);
         } catch (bytes memory lowLevelData) {
             console2.log("[FAIL] getStrategyData call on vault failed - selector not registered");
-            // Decode the error to see the selector
             bytes4 errorSelector = bytes4(lowLevelData);
             console2.log("Error selector:", vm.toString(errorSelector));
         }
     }
 
     /// @notice Test reading view functions after activation
-    /// @dev Tests if view functions work after activation (assumes activation was done via transaction)
     function test_readViewFunctions() public view {
         console2.log("=== Testing View Function Reads ===");
         console2.log("Vault Address:", VAULT_ADDRESS);
         console2.log("Pair Hash:", uint256(PAIR_HASH));
 
-        // DEX address
         address dex = 0x191066EE11118d60dF8C18B41E6705bB685c2cB0;
-
-        // Cast vault to AquaAdapter interface
         AquaAdapter vault = AquaAdapter(payable(VAULT_ADDRESS));
 
         console2.log("\n--- Testing getStrategyData ---");
@@ -386,18 +359,14 @@ contract AquaVaultTest is Test {
     }
 
     /// @notice Test EOA swap against the real vault
-    /// @dev Tests that an EOA can swap directly against the vault's XYCSwap strategy
     function test_eoaSwapAgainstVault() public {
         console2.log("=== EOA Swap Test Against Real Vault ===");
         console2.log("Vault Address:", VAULT_ADDRESS);
         console2.log("Pair Hash:", uint256(PAIR_HASH));
 
-        // DEX address
         address dex = 0x191066EE11118d60dF8C18B41E6705bB685c2cB0;
-        address token0 = 0x4200000000000000000000000000000000000006; // WETH
-        address token1 = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC
-
-        // Cast vault to AquaAdapter interface
+        address token0 = 0x4200000000000000000000000000000000000006;
+        address token1 = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
         AquaAdapter vault = AquaAdapter(payable(VAULT_ADDRESS));
 
         // Get strategy data from vault
@@ -447,7 +416,6 @@ contract AquaVaultTest is Test {
             }
         } catch {}
 
-        // Build XYCSwap Strategy struct
         XYCSwap.Strategy memory xycStrategy = XYCSwap.Strategy({
             maker: VAULT_ADDRESS,
             token0: token0,
@@ -456,7 +424,6 @@ contract AquaVaultTest is Test {
             salt: bytes32(strategyNonce)
         });
 
-        // Verify strategy hash matches
         bytes32 calculatedHash = keccak256(abi.encode(xycStrategy));
         if (calculatedHash != strategyData.strategyHash) {
             console2.log("[FAIL] Strategy hash mismatch!");
@@ -466,7 +433,6 @@ contract AquaVaultTest is Test {
         }
         console2.log("[SUCCESS] Strategy hash matches!");
 
-        // Get XYCSwap contract
         XYCSwap xycswap = XYCSwap(dex);
         IAqua aqua = IAqua(0x499943E74FB0cE105688beeE8Ef2ABec5D936d31);
 
@@ -478,19 +444,15 @@ contract AquaVaultTest is Test {
         console2.log("WETH:", aquaWethInitial);
         console2.log("USDC:", aquaUsdcInitial);
 
-        // Create test user (EOA)
         address testUser = address(0xABCD);
-        // Use a much smaller amount due to low liquidity
-        uint256 swapAmountIn = 1000; // 0.001 USDC (6 decimals)
-        bool zeroForOne = false; // Swapping USDC (token1) for WETH (token0)
+        uint256 swapAmountIn = 1000;
+        bool zeroForOne = false;
 
-        // Get quote
         uint256 quote = xycswap.quoteExactIn(xycStrategy, zeroForOne, swapAmountIn);
         console2.log("\n--- Swap Quote ---");
         console2.log("Input:", swapAmountIn, "USDC");
         console2.log("Expected Output:", quote, "WETH");
 
-        // Give user tokens and approve (with some buffer for safety)
         deal(token1, testUser, swapAmountIn * 2);
 
         // Get balances before swap
@@ -505,7 +467,6 @@ contract AquaVaultTest is Test {
         console2.log("Vault USDC:", vaultUsdcBefore);
         console2.log("Vault WETH:", vaultWethBefore);
 
-        // Approve XYCSwap to spend user's tokens
         vm.startPrank(testUser);
         IERC20(token1).approve(dex, type(uint256).max);
         uint256 allowance = IERC20(token1).allowance(testUser, dex);
@@ -514,32 +475,25 @@ contract AquaVaultTest is Test {
         assertTrue(allowance >= swapAmountIn, "Allowance should be sufficient");
         vm.stopPrank();
 
-        // Execute swap with 1M gas limit
-        // Note: The swap may revert if publishPairs() fails, but the swap itself succeeds
         console2.log("\n--- Executing Swap (1M gas limit) ---");
         uint256 amountOut;
         bool swapSuccess = false;
 
-        // Execute swap with 1M gas limit
-        // The swap will revert with Aqua error if publishPairs fails, but the swap itself succeeds
-        // So we catch the revert and then check balances to verify the swap happened
         vm.prank(testUser);
         (bool success, bytes memory returnData) = address(xycswap).call{gas: 1000000}(
             abi.encodeWithSelector(XYCSwap.swapExactIn.selector, xycStrategy, zeroForOne, swapAmountIn, 0, testUser, "")
         );
 
         if (success) {
-            // If we get here, the swap succeeded without publishPairs error
             amountOut = abi.decode(returnData, (uint256));
             swapSuccess = true;
             console2.log("[SUCCESS] Swap executed without errors!");
             console2.log("Amount Out:", amountOut, "WETH");
         } else {
-            // Expected revert - swap likely succeeded but publishPairs failed
             console2.log("[INFO] Swap reverted (expected - publishPairs() selector not registered on vault)");
             console2.log("[INFO] Checking balances to verify swap actually executed...");
-            swapSuccess = true; // Assume swap succeeded, will verify with balances
-            amountOut = 0; // Will be calculated from balance change
+            swapSuccess = true;
+            amountOut = 0;
         }
 
         // Get balances after swap
@@ -548,9 +502,6 @@ contract AquaVaultTest is Test {
         uint256 vaultUsdcAfter = IERC20(token1).balanceOf(VAULT_ADDRESS);
         uint256 vaultWethAfter = IERC20(token0).balanceOf(VAULT_ADDRESS);
 
-        // Get updated strategy data (after publishPairs)
-        // Note: publishPairs() is called automatically by XYCSwap, which should rebuild the strategy
-        // with new balances. We need to get the updated strategy hash to read the correct balances.
         AquaAdapterStorage.StrategyData memory strategyDataAfter;
         bytes32 updatedStrategyHash = strategyData.strategyHash;
         try vault.getStrategyData(PAIR_HASH, dex) returns (AquaAdapterStorage.StrategyData memory data) {
@@ -564,7 +515,6 @@ contract AquaVaultTest is Test {
                 console2.log("[WARNING] Strategy hash did not change - publishPairs may not have worked");
             }
         } catch {
-            // If publishPairs failed, use the original strategy data
             strategyDataAfter = strategyData;
             console2.log("[WARNING] Could not get updated strategy data - publishPairs may have failed");
             console2.log("[WARNING] Using original strategy hash for balance reading");
@@ -580,7 +530,6 @@ contract AquaVaultTest is Test {
             aquaWethFinal = weth;
             console2.log("[SUCCESS] Read Aqua balances with updated strategy hash");
         } catch {
-            // Fallback: try with original hash
             console2.log("[WARNING] Could not read Aqua balances with updated strategy hash, trying original");
             try aqua.safeBalances(VAULT_ADDRESS, dex, strategyData.strategyHash, token0, token1) returns (
                 uint256 usdc, uint256 weth
@@ -588,7 +537,6 @@ contract AquaVaultTest is Test {
                 aquaUsdcFinal = usdc;
                 aquaWethFinal = weth;
             } catch {
-                // If both fail, use initial values
                 console2.log("[WARNING] Could not read Aqua balances with either hash");
                 aquaUsdcFinal = aquaUsdcInitial;
                 aquaWethFinal = aquaWethInitial;
@@ -601,7 +549,6 @@ contract AquaVaultTest is Test {
         console2.log("Vault USDC:", vaultUsdcAfter);
         console2.log("Vault WETH:", vaultWethAfter);
 
-        // Calculate changes
         int256 userUsdcChange = int256(userUsdcAfter) - int256(userUsdcBefore);
         int256 userWethChange = int256(userWethAfter) - int256(userWethBefore);
         int256 vaultUsdcChange = int256(vaultUsdcAfter) - int256(vaultUsdcBefore);
@@ -680,7 +627,6 @@ contract AquaVaultTest is Test {
             }
         }
 
-        // Fee analysis
         uint256 feeAmount = (swapAmountIn * feeBps) / 10000;
         console2.log("\n--- Fee Analysis ---");
         console2.log("Swap Amount In:", swapAmountIn);
@@ -694,7 +640,6 @@ contract AquaVaultTest is Test {
             console2.log("(Negative because USDC was swapped out for WETH)");
         }
 
-        // Adapter gain analysis
         int256 adapterUsdcGain = int256(vaultUsdcAfter) - int256(vaultUsdcBefore);
         int256 adapterWethGain = int256(vaultWethAfter) - int256(vaultWethBefore);
         console2.log("\n--- Adapter Gain Analysis ---");
@@ -709,7 +654,6 @@ contract AquaVaultTest is Test {
             console2.log("Adapter Net WETH Gain:", adapterWethGain);
         }
 
-        // Value gain (assuming 1 WETH = 3000 USDC for reporting)
         uint256 wethPriceInUsdc = 3000 * 10 ** 6;
         int256 adapterValueGainUsdc = adapterUsdcGain + (adapterWethGain * int256(wethPriceInUsdc)) / int256(10 ** 18);
         if (adapterValueGainUsdc >= 0) {
@@ -732,17 +676,14 @@ contract AquaVaultTest is Test {
             console2.log("[FAIL] Swap did not execute successfully");
         }
 
-        // Verify swap happened
         if (swapSuccess) {
             if (amountOut == 0) {
-                // Calculate from balance change
                 amountOut = userWethAfter - userWethBefore;
             }
             assertTrue(amountOut > 0, "Swap should produce output");
             assertEq(userWethAfter - userWethBefore, amountOut, "User should receive exact output");
             assertEq(userUsdcBefore - userUsdcAfter, swapAmountIn, "User should spend exact input");
         } else {
-            // If swap failed, the test should fail
             revert("Swap did not execute successfully");
         }
     }
