@@ -310,22 +310,100 @@ contract AquaAdapter is BaseAdapter {
         }
     }
 
-    /// @notice Calculate amounts and prices for strategy
+    /// @notice Update price observation for a token (called when fetching latest price)
+    /// @param token The token address
+    /// @param price The latest price from Chainlink
+    function _updatePriceObservation(address token, int256 price) internal {
+        AquaAdapterStorage.AquaAdapterDS storage $ = AquaAdapterStorage.s();
+        AquaAdapterStorage.PriceObservations storage obs = $.priceObservations[token];
+        uint256 currentBlock = block.number;
+
+        // Check if we need to update (new block or price changed significantly)
+        bool shouldUpdate = true;
+        if (obs.count > 0) {
+            uint8 lastIndex = (obs.index + 30 - 1) % 30;
+            AquaAdapterStorage.PriceObservation memory lastObs = obs.observations[lastIndex];
+            // Update if it's a new block or if price changed by more than 1%
+            if (lastObs.blockNumber == currentBlock) {
+                shouldUpdate = false;
+            }
+        }
+
+        if (shouldUpdate && price > 0) {
+            // Add new observation to circular buffer
+            obs.observations[obs.index] = AquaAdapterStorage.PriceObservation({
+                blockNumber: currentBlock,
+                price: price
+            });
+            
+            obs.index = (obs.index + 1) % 30;
+            if (obs.count < 30) {
+                obs.count++;
+            }
+        }
+    }
+
+    /// @notice Get TWAP price for a token (average of last 30 block prices)
+    /// @param token The token address
+    /// @param feed The Chainlink aggregator feed
+    /// @return twapPrice The time-weighted average price
+    function _getTWAPPrice(address token, IAggregator feed) internal returns (uint256 twapPrice) {
+        // First, update with latest price
+        (, int256 latestPriceRaw,,,) = feed.latestRoundData();
+        if (latestPriceRaw <= 0) revert INVALID_PRICE();
+        
+        _updatePriceObservation(token, latestPriceRaw);
+
+        AquaAdapterStorage.AquaAdapterDS storage $ = AquaAdapterStorage.s();
+        AquaAdapterStorage.PriceObservations storage obs = $.priceObservations[token];
+
+        if (obs.count == 0) {
+            // No observations yet, use latest price
+            return uint256(latestPriceRaw);
+        }
+
+        // Calculate average of observations from the last 30 blocks
+        int256 sum = 0;
+        uint256 validCount = 0;
+        uint256 currentBlock = block.number;
+
+        // Iterate through observations in reverse order (most recent first)
+        // The most recent observation is at (index - 1) % 30
+        for (uint8 i = 0; i < obs.count; i++) {
+            // Calculate index: start from most recent and go backwards
+            uint8 idx = (obs.index + 30 - 1 - i) % 30;
+            AquaAdapterStorage.PriceObservation memory observation = obs.observations[idx];
+            
+            // Only include observations from the last 30 blocks
+            if (currentBlock >= observation.blockNumber && 
+                currentBlock - observation.blockNumber < 30 &&
+                observation.price > 0) {
+                sum += observation.price;
+                validCount++;
+            }
+        }
+
+        if (validCount == 0) {
+            // Fallback to latest price if no valid observations
+            return uint256(latestPriceRaw);
+        }
+
+        // Calculate average (sum of prices / count)
+        twapPrice = uint256(sum) / validCount;
+    }
+
+    /// @notice Calculate amounts and prices for strategy using TWAP
     function _calculateAmounts(address[] memory tokens, uint256 balance0, uint256 balance1)
         internal
-        view
         returns (uint256[] memory amounts, uint256[] memory prices)
     {
         AquaAdapterStorage.AquaAdapterDS storage $ = AquaAdapterStorage.s();
         IAggregator feed0 = IAggregator($.chainlinkFeeds[tokens[0]]);
         IAggregator feed1 = IAggregator($.chainlinkFeeds[tokens[1]]);
 
-        (, int256 price0Raw,,,) = feed0.latestRoundData();
-        (, int256 price1Raw,,,) = feed1.latestRoundData();
-        if (price0Raw <= 0 || price1Raw <= 0) revert INVALID_PRICE();
-
-        uint256 price0 = uint256(price0Raw);
-        uint256 price1 = uint256(price1Raw);
+        // Use TWAP instead of latest price
+        uint256 price0 = _getTWAPPrice(tokens[0], feed0);
+        uint256 price1 = _getTWAPPrice(tokens[1], feed1);
         uint8 token0Decimals = _getTokenDecimals(tokens[0]);
         uint8 token1Decimals = _getTokenDecimals(tokens[1]);
 

@@ -19,11 +19,23 @@ library AquaAdapterStorage {
         address[] dexes;
     }
 
+    struct PriceObservation {
+        uint256 blockNumber;
+        int256 price;
+    }
+
+    struct PriceObservations {
+        PriceObservation[30] observations;
+        uint8 index; // Current index in circular buffer
+        uint8 count; // Number of valid observations (max 30)
+    }
+
     struct AquaAdapterDS {
         mapping(bytes32 => mapping(address => StrategyData)) strategies;
         mapping(bytes32 => uint256) strategyNonces;
         mapping(bytes32 => bool) pairExists;
         mapping(address => address) chainlinkFeeds;
+        mapping(address => PriceObservations) priceObservations; // Token => Price observations
         Pair[] pairs;
     }
 
