@@ -1,0 +1,20 @@
+{
+  "lib/aqua": {
+    "tag": {
+      "name": "0.0.7",
+      "rev": "ec7e8cf8cb2ba1131b670848d4757cd528014e80"
+    }
+  },
+  "lib/aqua-app-template": {
+    "tag": {
+      "name": "0.0.2",
+      "rev": "8dd63ab2b673203f13840f0a8b77aed03492d52f"
+    }
+  },
+  "lib/openzeppelin-contracts": {
+    "tag": {
+      "name": "v5.5.0",
+      "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
+    }
+  }
+}
