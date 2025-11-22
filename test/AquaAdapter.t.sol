@@ -7,7 +7,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AquaAdapter} from "@factordao/contracts/adapters/dex/AquaAdapter.sol";
 import {AquaAdapterStorage} from "@factordao/contracts/adapters/dex/AquaAdapterStorage.sol";
 import {IAggregator} from "@factordao/contracts/interfaces/IAggregator.sol";
-import {WaveSwap} from "../src/WaveSwap.sol";
 import {IAqua} from "@1inch/aqua/src/interfaces/IAqua.sol";
 
 interface IAquaTest {
@@ -38,30 +37,20 @@ contract AquaAdapterTest is Test {
     address public user = address(0x1234);
 
     function setUp() public {
-        // Fork at block 38281777 or later (Aqua contract deployed at 38281777 on Base)
         vm.createSelectFork("base", 38281777);
-
-        // Deploy pro adapter only
         aquaAdapterPro = new AquaAdapter(true);
     }
 
-    /// @notice Helper function to deploy swap app
-    /// @dev Must be called at the start of each test that uses the adapter
     function _deployAndSetSwapApp() internal {
-        // Deploy XYCSwap DEX (swap app) - using the same Aqua address as in AquaAdapter
         xycswap = new XYCSwap(IAqua(0x499943E74FB0cE105688beeE8Ef2ABec5D936d31));
     }
 
-    /// @notice Helper function to deploy two swap apps
-    /// @dev Must be called at the start of each test that uses multiple DEXes
     function _deployAndSetSwapApps() internal {
-        // Deploy two XYCSwap DEX instances - using the same Aqua address as in AquaAdapter
         xycswap = new XYCSwap(IAqua(0x499943E74FB0cE105688beeE8Ef2ABec5D936d31));
         xycswap2 = new XYCSwap(IAqua(0x499943E74FB0cE105688beeE8Ef2ABec5D936d31));
     }
 
     function test_setPair() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -72,33 +61,25 @@ contract AquaAdapterTest is Test {
 
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
-        // Verify pair was added
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         assertTrue(aquaAdapterPro.pairExists(pairHash));
 
-        // Verify pair details can be retrieved using public pairs mapping
-        // Public struct array getters return (token0, token1, feeBps) - dexes array is not returned by getter
         (address retrievedToken0, address retrievedToken1, uint256 retrievedFeeBps) = aquaAdapterPro.pairs(0);
         assertEq(retrievedToken0, token0, "Token0 should match");
         assertEq(retrievedToken1, token1, "Token1 should match");
         assertEq(retrievedFeeBps, feeBps, "FeeBps should match");
 
-        // Note: dexes array cannot be retrieved directly from public getter
-        // We verify it exists through getStrategyData which requires the DEX
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
         assertTrue(strategy.strategyHash != bytes32(0), "Strategy should exist for DEX");
 
-        // Verify pair hash matches
         bytes32 retrievedPairHash = aquaAdapterPro.getPairHash(token0, token1);
         assertEq(retrievedPairHash, pairHash, "Pair hash should match");
 
-        // Verify chainlink feeds were set and can be retrieved
         assertEq(aquaAdapterPro.chainlinkFeeds(token0), USDC_CHAINLINK_FEED);
         assertEq(aquaAdapterPro.chainlinkFeeds(token1), WETH_CHAINLINK_FEED);
     }
 
     function test_setPairAndPublish() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = weth;
@@ -107,13 +88,11 @@ contract AquaAdapterTest is Test {
         address[] memory dexes = new address[](1);
         dexes[0] = address(xycswap);
 
-        // Set pair - this should automatically publish
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         assertTrue(aquaAdapterPro.pairExists(pairHash));
 
-        // Verify strategy was created
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
         assertTrue(strategy.strategyHash != bytes32(0));
         assertEq(strategy.token0, token0);
@@ -121,21 +100,18 @@ contract AquaAdapterTest is Test {
     }
 
     function test_setPairWithBalances() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Transfer some tokens to the adapter to test balance calculation
-        uint256 usdcAmount = 1000 * 10 ** 6; // 1000 USDC (6 decimals)
-        uint256 wethAmount = 1 * 10 ** 18; // 1 WETH (18 decimals)
+        uint256 usdcAmount = 1000 * 10 ** 6;
+        uint256 wethAmount = 1 * 10 ** 18;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
 
-        // Set pair - this should calculate amounts based on balances and prices
         address[] memory dexes = new address[](1);
         dexes[0] = address(xycswap);
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
@@ -143,15 +119,12 @@ contract AquaAdapterTest is Test {
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Verify amounts were calculated
         assertTrue(strategy.amounts.length == 2);
         assertTrue(strategy.amounts[0] > 0 || strategy.amounts[1] > 0);
 
-        // Verify amounts don't exceed balances
         assertLe(strategy.amounts[0], strategy.liquidity0);
         assertLe(strategy.amounts[1], strategy.liquidity1);
 
-        // Verify prices were fetched
         assertTrue(strategy.prices.length == 2);
         assertTrue(strategy.prices[0] > 0);
         assertTrue(strategy.prices[1] > 0);
@@ -165,7 +138,6 @@ contract AquaAdapterTest is Test {
     }
 
     function test_setMultiplePairs() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -182,19 +154,15 @@ contract AquaAdapterTest is Test {
         aquaAdapterPro.setPair(token0, token1, feeBps1, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
         aquaAdapterPro.setPair(token2, token3, feeBps2, USDC_CHAINLINK_FEED, WBTC_CHAINLINK_FEED, dexes);
 
-        // Verify pairs were added
         bytes32 pairHash1 = keccak256(abi.encode(token0, token1));
         bytes32 pairHash2 = keccak256(abi.encode(token2, token3));
         assertTrue(aquaAdapterPro.pairExists(pairHash1));
         assertTrue(aquaAdapterPro.pairExists(pairHash2));
 
-        // Verify we can retrieve both pairs using public pairs mapping
-        // Public struct array getters return (token0, token1, feeBps) - dexes array is not returned
         (address retrievedToken0_1, address retrievedToken1_1, uint256 retrievedFeeBps1) = aquaAdapterPro.pairs(0);
         assertEq(retrievedToken0_1, token0, "First pair token0 should match");
         assertEq(retrievedToken1_1, token1, "First pair token1 should match");
         assertEq(retrievedFeeBps1, feeBps1, "First pair feeBps should match");
-        // Verify DEX exists through strategy data
         AquaAdapterStorage.StrategyData memory strategy1 = aquaAdapterPro.getStrategyData(pairHash1, address(xycswap));
         assertTrue(strategy1.strategyHash != bytes32(0), "First pair DEX should exist");
         bytes32 retrievedPairHash1 = aquaAdapterPro.getPairHash(token0, token1);
@@ -204,13 +172,11 @@ contract AquaAdapterTest is Test {
         assertEq(retrievedToken0_2, token2, "Second pair token0 should match");
         assertEq(retrievedToken1_2, token3, "Second pair token1 should match");
         assertEq(retrievedFeeBps2, feeBps2, "Second pair feeBps should match");
-        // Verify DEX exists through strategy data
         AquaAdapterStorage.StrategyData memory strategy2 = aquaAdapterPro.getStrategyData(pairHash2, address(xycswap));
         assertTrue(strategy2.strategyHash != bytes32(0), "Second pair DEX should exist");
         bytes32 retrievedPairHash2 = aquaAdapterPro.getPairHash(token2, token3);
         assertEq(retrievedPairHash2, pairHash2, "Second pair hash should match");
 
-        // Verify chainlink feeds for both pairs
         assertEq(aquaAdapterPro.chainlinkFeeds(token0), USDC_CHAINLINK_FEED);
         assertEq(aquaAdapterPro.chainlinkFeeds(token1), WETH_CHAINLINK_FEED);
         assertEq(aquaAdapterPro.chainlinkFeeds(token2), USDC_CHAINLINK_FEED);
@@ -218,7 +184,6 @@ contract AquaAdapterTest is Test {
     }
 
     function test_publishPairs() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -228,31 +193,25 @@ contract AquaAdapterTest is Test {
         address[] memory dexes = new address[](1);
         dexes[0] = address(xycswap);
 
-        // Set pair first
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
 
-        // Publish pairs again - should create a new strategy (nonce increments)
         aquaAdapterPro.publishPairs();
 
-        // Verify new strategy was created (different hash due to nonce increment)
         bytes32 newStrategyHash = aquaAdapterPro.getStrategyData(pairHash, address(xycswap)).strategyHash;
         assertTrue(newStrategyHash != bytes32(0));
-        // Note: The strategy hash might be the same if amounts are the same, but nonce should increment
     }
 
     function test_setPairCalculatesCorrectAmounts() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Transfer tokens
-        uint256 wethAmount = 1 * 10 ** 18; // 1 WETH
-        uint256 usdcAmount = 3000 * 10 ** 6; // 3000 USDC
+        uint256 wethAmount = 1 * 10 ** 18;
+        uint256 usdcAmount = 3000 * 10 ** 6;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
@@ -264,7 +223,6 @@ contract AquaAdapterTest is Test {
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Just verify amounts are set (price calculations work, just decimal precision issues)
         assertTrue(strategy.amounts[0] > 0, "USDC amount should be set");
         assertTrue(strategy.amounts[1] > 0, "WETH amount should be set");
         assertTrue(strategy.prices[0] > 0, "USDC price should be set");
@@ -272,16 +230,14 @@ contract AquaAdapterTest is Test {
     }
 
     function test_calculatedAmountsMatchTradePrice() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Transfer tokens
-        uint256 wethAmount = 1 * 10 ** 18; // 1 WETH
-        uint256 usdcAmount = 3000 * 10 ** 6; // 3000 USDC
+        uint256 wethAmount = 1 * 10 ** 18;
+        uint256 usdcAmount = 3000 * 10 ** 6;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
@@ -293,7 +249,6 @@ contract AquaAdapterTest is Test {
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Just verify amounts are calculated (price is correct, just decimal precision issues)
         assertTrue(strategy.amounts[0] > 0, "USDC amount should be calculated");
         assertTrue(strategy.amounts[1] > 0, "WETH amount should be calculated");
     }
@@ -318,21 +273,16 @@ contract AquaAdapterTest is Test {
         address token0 = usdc;
         address token1 = weth;
 
-        // Calculate expected hash
         bytes32 expectedHash = keccak256(abi.encode(token0, token1));
-
-        // Get hash from contract
         bytes32 retrievedHash = aquaAdapterPro.getPairHash(token0, token1);
 
         assertEq(retrievedHash, expectedHash, "Pair hash should match");
 
-        // Test reverse order (should be different)
         bytes32 reverseHash = aquaAdapterPro.getPairHash(token1, token0);
         assertTrue(reverseHash != expectedHash, "Reverse order should produce different hash");
     }
 
     function test_retrieveAllSetData() public {
-        // Deploy swap app
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -341,47 +291,37 @@ contract AquaAdapterTest is Test {
         address[] memory dexes = new address[](1);
         dexes[0] = address(xycswap);
 
-        // Set pair
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
 
-        // Test 1: Verify pairExists retrieves correctly
         assertTrue(aquaAdapterPro.pairExists(pairHash), "Pair should exist");
 
-        // Test 2: Verify pairs mapping retrieves correctly
-        // Public struct array getters return (token0, token1, feeBps) - dexes array is not returned
         (address retrievedToken0, address retrievedToken1, uint256 retrievedFeeBps) = aquaAdapterPro.pairs(0);
         assertEq(retrievedToken0, token0, "Token0 should be retrievable");
         assertEq(retrievedToken1, token1, "Token1 should be retrievable");
         assertEq(retrievedFeeBps, feeBps, "FeeBps should be retrievable");
-        // Verify DEX exists through strategy data
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
         assertTrue(strategy.strategyHash != bytes32(0), "DEX should be retrievable through strategy");
         bytes32 retrievedPairHash = aquaAdapterPro.getPairHash(token0, token1);
         assertEq(retrievedPairHash, pairHash, "Pair hash should be retrievable");
 
-        // Test 3: Verify getPairHash retrieves correctly
         bytes32 hashFromFunction = aquaAdapterPro.getPairHash(token0, token1);
         assertEq(hashFromFunction, pairHash, "getPairHash should return correct hash");
 
-        // Test 4: Verify chainlinkFeeds retrieves correctly
         address feed0 = aquaAdapterPro.chainlinkFeeds(token0);
         address feed1 = aquaAdapterPro.chainlinkFeeds(token1);
         assertEq(feed0, USDC_CHAINLINK_FEED, "Chainlink feed for token0 should be retrievable");
         assertEq(feed1, WETH_CHAINLINK_FEED, "Chainlink feed for token1 should be retrievable");
 
-        // Test 5: Verify getStrategyData retrieves correctly (after publishPairs)
         AquaAdapterStorage.StrategyData memory strategyData = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
         assertTrue(strategyData.strategyHash != bytes32(0), "Strategy hash should be retrievable");
         assertEq(strategyData.token0, token0, "Strategy token0 should be retrievable");
         assertEq(strategyData.token1, token1, "Strategy token1 should be retrievable");
 
-        // Test 6: Verify strategyNonces retrieves correctly
         uint256 nonce = aquaAdapterPro.strategyNonces(pairHash);
         assertTrue(nonce > 0, "Strategy nonce should be retrievable");
 
-        // Test 7: Verify aqua address retrieves correctly
         address aquaAddress = address(aquaAdapterPro.aqua());
         assertEq(aquaAddress, 0x499943E74FB0cE105688beeE8Ef2ABec5D936d31, "Aqua address should be retrievable");
 
@@ -389,16 +329,14 @@ contract AquaAdapterTest is Test {
     }
 
     function test_estimateOutput_token0ToToken1() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Set up pair with some liquidity
-        uint256 usdcAmount = 10000 * 10 ** 6; // 10000 USDC
-        uint256 wethAmount = 3 * 10 ** 18; // 3 WETH
+        uint256 usdcAmount = 10000 * 10 ** 6;
+        uint256 wethAmount = 3 * 10 ** 18;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
@@ -407,12 +345,10 @@ contract AquaAdapterTest is Test {
         dexes[0] = address(xycswap);
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
-        // Get strategy to see current amounts
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Estimate output for swapping 1000 USDC
-        uint256 inputAmount = 1000 * 10 ** 6; // 1000 USDC
+        uint256 inputAmount = 1000 * 10 ** 6;
         uint256 outputAmount = aquaAdapterPro.estimateOutput(token0, token1, inputAmount, 0);
 
         console2.log("Input (USDC):", inputAmount);
@@ -420,24 +356,19 @@ contract AquaAdapterTest is Test {
         console2.log("Strategy Reserve0 (USDC):", strategy.amounts[0]);
         console2.log("Strategy Reserve1 (WETH):", strategy.amounts[1]);
 
-        // Verify output is greater than 0
         assertTrue(outputAmount > 0, "Output should be greater than 0");
-
-        // Verify output doesn't exceed available liquidity
         assertLe(outputAmount, strategy.amounts[1], "Output should not exceed available liquidity");
     }
 
     function test_estimateOutput_token1ToToken0() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Set up pair with some liquidity
-        uint256 usdcAmount = 10000 * 10 ** 6; // 10000 USDC
-        uint256 wethAmount = 3 * 10 ** 18; // 3 WETH
+        uint256 usdcAmount = 10000 * 10 ** 6;
+        uint256 wethAmount = 3 * 10 ** 18;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
@@ -446,20 +377,16 @@ contract AquaAdapterTest is Test {
         dexes[0] = address(xycswap);
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
-        // Get strategy to see current amounts
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Get actual reserves from Aqua vault (maker is aquaAdapterPro, app is xycswap)
         (uint256 reserve0, uint256 reserve1) = aquaAdapterPro.aqua().safeBalances(
             address(aquaAdapterPro), address(xycswap), strategy.strategyHash, token0, token1
         );
 
-        // Estimate output for swapping a small amount of WETH (use a fraction of available reserve)
-        uint256 inputAmount = reserve1 / 10; // 10% of available WETH
+        uint256 inputAmount = reserve1 / 10;
         if (inputAmount == 0) {
-            // If reserve is too small, use a minimal amount
-            inputAmount = 1 * 10 ** 15; // 0.001 WETH
+            inputAmount = 1 * 10 ** 15;
         }
         uint256 outputAmount = aquaAdapterPro.estimateOutput(token0, token1, 0, inputAmount);
 
@@ -470,15 +397,11 @@ contract AquaAdapterTest is Test {
         console2.log("Strategy Reserve0 (USDC):", strategy.amounts[0]);
         console2.log("Strategy Reserve1 (WETH):", strategy.amounts[1]);
 
-        // Verify output is greater than 0
         assertTrue(outputAmount > 0, "Output should be greater than 0");
-
-        // Verify output doesn't exceed available liquidity in vault
         assertLe(outputAmount, reserve0, "Output should not exceed available liquidity in vault");
     }
 
     function test_estimateOutput_revertsWhenBothAmountsZero() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -494,7 +417,6 @@ contract AquaAdapterTest is Test {
     }
 
     function test_estimateOutput_revertsWhenBothAmountsNonZero() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -510,16 +432,14 @@ contract AquaAdapterTest is Test {
     }
 
     function test_estimateOutput_revertsWhenInsufficientLiquidity() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Set up pair with minimal liquidity
-        uint256 usdcAmount = 100 * 10 ** 6; // 100 USDC
-        uint256 wethAmount = 1 * 10 ** 17; // 0.1 WETH
+        uint256 usdcAmount = 100 * 10 ** 6;
+        uint256 wethAmount = 1 * 10 ** 17;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
@@ -528,34 +448,28 @@ contract AquaAdapterTest is Test {
         dexes[0] = address(xycswap);
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
-        // Get strategy to see current amounts
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Get actual vault reserves (estimateOutput uses vault reserves, not strategy amounts)
         (uint256 reserve0, uint256 reserve1) = aquaAdapterPro.aqua().safeBalances(
             address(aquaAdapterPro), address(xycswap), strategy.strategyHash, token0, token1
         );
 
-        // Try to swap more than available liquidity in vault
-        // Use a much larger amount to ensure the output exceeds available reserves
-        uint256 inputAmount = reserve1 * 2; // Double the available WETH in vault
+        uint256 inputAmount = reserve1 * 2;
 
         vm.expectRevert(AquaAdapter.INSUFFICIENT_LIQUIDITY.selector);
         aquaAdapterPro.estimateOutput(token0, token1, 0, inputAmount);
     }
 
     function test_estimateOutput_matchesStrategyAmounts() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
         uint256 feeBps = 30;
 
-        // Set up pair
-        uint256 usdcAmount = 10000 * 10 ** 6; // 10000 USDC
-        uint256 wethAmount = 3 * 10 ** 18; // 3 WETH
+        uint256 usdcAmount = 10000 * 10 ** 6;
+        uint256 wethAmount = 3 * 10 ** 18;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
@@ -564,16 +478,12 @@ contract AquaAdapterTest is Test {
         dexes[0] = address(xycswap);
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
 
-        // Get strategy amounts
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
 
-        // Swap 1000 USDC
-        uint256 inputAmount = 1000 * 10 ** 6; // 1000 USDC
+        uint256 inputAmount = 1000 * 10 ** 6;
         uint256 outputAmount = aquaAdapterPro.estimateOutput(token0, token1, inputAmount, 0);
 
-        // Calculate expected output based on strategy amounts ratio
-        // output = (input * reserve1) / reserve0
         uint256 expectedOutput = (inputAmount * strategy.amounts[1]) / strategy.amounts[0];
 
         console2.log("Input (USDC):", inputAmount);
@@ -582,16 +492,14 @@ contract AquaAdapterTest is Test {
         console2.log("Strategy Reserve0 (USDC):", strategy.amounts[0]);
         console2.log("Strategy Reserve1 (WETH):", strategy.amounts[1]);
 
-        // Verify output matches expected (should be exact or very close due to rounding)
         assertEq(outputAmount, expectedOutput, "Output should match strategy amounts ratio");
     }
 
     function test_setPairWithLargeAmounts() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
-        uint256 usdcAmount = 10000 * 10 ** 6; // 10000 USDC
-        uint256 wethAmount = 10 * 10 ** 18; // 10 WETH
+        uint256 usdcAmount = 10000 * 10 ** 6;
+        uint256 wethAmount = 10 * 10 ** 18;
 
         deal(usdc, address(aquaAdapterPro), usdcAmount);
         deal(weth, address(aquaAdapterPro), wethAmount);
@@ -605,7 +513,6 @@ contract AquaAdapterTest is Test {
         uint8 usdcPriceDecimals = usdcFeed.decimals();
         uint8 wethPriceDecimals = wethFeed.decimals();
 
-        // Calculate WETH price in USDC terms
         uint256 wethPriceInUSDC = (uint256(wethPriceRaw) * (10 ** usdcPriceDecimals))
             / (uint256(usdcPriceRaw) * (10 ** (wethPriceDecimals - usdcPriceDecimals)));
 
@@ -618,7 +525,6 @@ contract AquaAdapterTest is Test {
         console2.log("WETH Price Decimals:", wethPriceDecimals);
         console2.log("WETH Price in USDC:", wethPriceInUSDC);
 
-        // Calculate expected WETH for 10000 USDC
         uint256 expectedWethFor10000Usdc = (10000 * 10 ** 18 * (10 ** usdcPriceDecimals))
             / (uint256(wethPriceRaw) * (10 ** (wethPriceDecimals - usdcPriceDecimals)));
         console2.log("Expected WETH for 10000 USDC:", expectedWethFor10000Usdc / (10 ** 18), "WETH");
@@ -655,43 +561,27 @@ contract AquaAdapterTest is Test {
         console2.log("WETH Remaining (raw):", wethRemaining);
         console2.log("WETH Remaining (readable):", wethRemaining / (10 ** 18), "WETH");
 
-        // Now test estimateOutput with 10000 USDC
         console2.log("=== Testing estimateOutput with 10000 USDC ===");
-        uint256 swapAmount = 10000 * 10 ** 6; // 10000 USDC
+        uint256 swapAmount = 10000 * 10 ** 6;
         uint256 estimatedWethOutput = aquaAdapterPro.estimateOutput(usdc, weth, swapAmount, 0);
 
         console2.log("Input USDC (raw):", swapAmount);
         console2.log("Estimated WETH Output (raw):", estimatedWethOutput);
 
-        // Get reserves from vault for calculation (maker is aquaAdapterPro, app is xycswap)
         (uint256 reserve0, uint256 reserve1) = aquaAdapterPro.aqua().safeBalances(
             address(aquaAdapterPro), address(xycswap), strategy.strategyHash, usdc, weth
         );
         console2.log("Vault Reserve0 (USDC):", reserve0);
         console2.log("Vault Reserve1 (WETH):", reserve1);
 
-        // Calculate expected: (swapAmount * reserve1) / reserve0
         uint256 expectedOutput = (swapAmount * reserve1) / reserve0;
         console2.log("Expected Output (raw):", expectedOutput);
 
-        // Show readable values
         console2.log("Input USDC (readable):", swapAmount / (10 ** 6), "USDC");
         console2.log("Estimated WETH Output (readable):", estimatedWethOutput / (10 ** 18), "ETH");
         console2.log("Expected Output (readable):", expectedOutput / (10 ** 18), "ETH");
     }
 
-    function _executeAdapter(address adapter, bytes memory params) internal {
-        (bool success, bytes memory returnData) = adapter.delegatecall(params);
-        if (!success) {
-            if (returnData.length < 68) revert();
-            assembly {
-                returnData := add(returnData, 0x04)
-            }
-            revert(abi.decode(returnData, (string)));
-        }
-    }
-
-    // Helper function to create XYCSwap Strategy struct from adapter's strategy data
     function _getXYCStrategy(address token0, address token1, uint256 feeBps, bytes32 pairHash)
         internal
         view
@@ -699,7 +589,7 @@ contract AquaAdapterTest is Test {
     {
         uint256 nonce = aquaAdapterPro.strategyNonces(pairHash);
         return XYCSwap.Strategy({
-            maker: address(aquaAdapterPro), // maker is the adapter (liquidity provider)
+            maker: address(aquaAdapterPro),
             token0: token0,
             token1: token1,
             feeBps: feeBps,
@@ -708,7 +598,6 @@ contract AquaAdapterTest is Test {
     }
 
     function test_deployXYCSwap() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         assertTrue(address(xycswap) != address(0), "XYCSwap should be deployed");
@@ -716,7 +605,6 @@ contract AquaAdapterTest is Test {
     }
 
     function test_dexIsSetInPair() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
@@ -729,7 +617,6 @@ contract AquaAdapterTest is Test {
 
         bytes32 pairHash = keccak256(abi.encode(token0, token1));
 
-        // Verify DEX is set in pair by checking strategy data exists for the DEX
         AquaAdapterStorage.StrategyData memory strategy = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
         assertTrue(strategy.strategyHash != bytes32(0), "Strategy should exist for DEX");
     }
@@ -739,27 +626,23 @@ contract AquaAdapterTest is Test {
         view
         returns (uint256 reserve0, uint256 reserve1)
     {
-        // Use xycswap as the app since that's what the adapter uses when shipping strategies
         (reserve0, reserve1) =
             aquaAdapterPro.aqua().safeBalances(address(aquaAdapterPro), address(xycswap), strategyHash, token0, token1);
     }
 
     function test_publishPairsAfterSetup() public {
-        // Deploy swap app and set it in adapter
         _deployAndSetSwapApp();
 
         address token0 = usdc;
         address token1 = weth;
-        uint256 feeBps = 30; // 0.3%
+        uint256 feeBps = 30;
 
-        // Set up pair with liquidity
-        uint256 usdcAmount = 10000 * 10 ** 6; // 10000 USDC
-        uint256 wethAmount = 10 * 10 ** 18; // 10 WETH
+        uint256 usdcAmount = 10000 * 10 ** 6;
+        uint256 wethAmount = 10 * 10 ** 18;
 
         deal(token0, address(aquaAdapterPro), usdcAmount);
         deal(token1, address(aquaAdapterPro), wethAmount);
 
-        // Set pair and create strategy (this calls publishPairs internally)
         address[] memory dexes = new address[](1);
         dexes[0] = address(xycswap);
         aquaAdapterPro.setPair(token0, token1, feeBps, USDC_CHAINLINK_FEED, WETH_CHAINLINK_FEED, dexes);
@@ -772,25 +655,20 @@ contract AquaAdapterTest is Test {
         console2.log("Strategy Reserve1 (WETH):", strategy.amounts[1]);
         console2.log("Strategy Hash:", uint256(strategy.strategyHash));
 
-        // Verify strategy was created
         assertTrue(strategy.strategyHash != bytes32(0), "Strategy should be created");
         assertTrue(strategy.amounts[0] > 0, "USDC amount should be set");
         assertTrue(strategy.amounts[1] > 0, "WETH amount should be set");
 
-        // Get vault balances
         (uint256 vaultReserve0, uint256 vaultReserve1) = _getVaultBalances(strategy.strategyHash, token0, token1);
         console2.log("Vault Reserve0 (USDC):", vaultReserve0);
         console2.log("Vault Reserve1 (WETH):", vaultReserve1);
 
-        // Verify strategy matches vault
         assertEq(strategy.amounts[0], vaultReserve0, "Strategy amounts should match vault");
         assertEq(strategy.amounts[1], vaultReserve1, "Strategy amounts should match vault");
 
-        // Manually call publishPairs again to test it works
         console2.log("\n=== Calling publishPairs Again ===");
         aquaAdapterPro.publishPairs();
 
-        // Verify strategy still matches after republishing
         AquaAdapterStorage.StrategyData memory strategyAfter = aquaAdapterPro.getStrategyData(pairHash, address(xycswap));
         (uint256 vaultReserve0After, uint256 vaultReserve1After) =
             _getVaultBalances(strategyAfter.strategyHash, token0, token1);
