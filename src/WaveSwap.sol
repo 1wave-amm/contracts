@@ -35,7 +35,7 @@ contract WaveSwap is AquaApp {
         bytes32 salt;
     }
 
-    uint256 internal constant BPS_BASE = 10_000;
+    uint256 internal constant BPS_BASE = 100_000;
 
     constructor(IAqua aqua_) AquaApp(aqua_) {}
 
