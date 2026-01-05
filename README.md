@@ -4,10 +4,11 @@ This repository contains smart contracts for the WaveSwap protocol, an Aqua-base
 
 ## Overview
 
-WaveSwap consists of two main components:
+This repository contains smart contracts for the 1Wave ecosystem, consisting of three main components:
 
 1. **WaveSwap** (`src/WaveSwap.sol`) - A swap application built on Aqua protocol that executes token swaps
 2. **AquaAdapter** (`adapter/AquaAdapter.sol`) - An adapter contract that manages liquidity strategies and integrates with the FactorDAO vault system
+3. **WavePointToken** (`src/WavePointToken.sol`) - A non-transferable ERC20 token for the 1Wave points system, designed to work with Merkl for tracking and rewarding user activities
 
 ## Contracts
 
@@ -201,6 +202,77 @@ The adapter uses Diamond Storage pattern via `AquaAdapterStorage`:
 
 ---
 
+### WavePointToken
+
+**Location:** `src/WavePointToken.sol`
+
+**Description:**
+WavePointToken is a non-transferable ERC20 token designed for the 1Wave points system. It integrates with Merkl to track and reward user activities such as vault deposits, swaps, and referrals. The token is based on Merkl's PointToken reference contract and implements access control for secure minting and burning operations.
+
+#### Key Features
+
+- **Non-Transferable**: By default, tokens cannot be transferred between addresses (except for whitelisted recipients)
+- **Minter Management**: Only authorized minters can mint or burn tokens
+- **Access Control**: Integrates with an AccessControlManager for governance functions
+- **Burn for Claim**: Users can burn their own tokens for future claim tracking
+- **Batch Operations**: Supports batch minting for efficient distribution
+- **Whitelist Support**: Allows transfers to/from whitelisted addresses when needed
+
+#### Core Functions
+
+##### `mint(address account, uint256 amount)`
+Mints tokens to a specific account. Only authorized minters can call this function.
+
+##### `burn(address account, uint256 amount)`
+Burns tokens from a specific account. Only authorized minters can call this function.
+
+##### `mintBatch(address[] memory accounts, uint256[] memory amounts)`
+Mints tokens to multiple accounts in a single transaction for gas efficiency.
+
+##### `burnForClaim(uint256 amount)`
+Allows users to burn their own tokens for future claim tracking. This function must be enabled by governance.
+
+##### `toggleMinter(address minter)`
+Adds or removes a minter address. Only the governor can call this function.
+
+##### `toggleAllowedTransfers()`
+Enables or disables token transfers globally. Only governor or guardian can call this function.
+
+##### `toggleWhitelistedRecipient(address recipient)`
+Adds or removes an address from the transfer whitelist. Only governor or guardian can call this function.
+
+##### `setBurnForClaimEnabled(bool enabled)`
+Enables or disables the `burnForClaim` functionality. Only governor or guardian can call this function.
+
+#### Access Control
+
+The contract uses three levels of access control:
+
+- **Minter**: Can mint and burn tokens
+- **Governor or Guardian**: Can toggle transfer settings, whitelist recipients, and enable burn for claim
+- **Governor**: Can add/remove minters
+
+#### Integration with Merkl
+
+WavePointToken is designed to work with Merkl's points system:
+
+1. **Minting**: Merkl (or authorized services) mints points to users based on their activities
+2. **Tracking**: Points are tracked on-chain and can be queried via Merkl API
+3. **Burn for Claim**: Users can burn points to track them for future token claims
+4. **Non-Transferable**: Prevents point trading while allowing Merkl to distribute rewards
+
+#### Deployed Contract
+
+- **Address**: `0xC9c9C776C45768Ce84ECb3526AE05d02AEFf290F`
+- **Network**: Base (Chain ID: 8453)
+- **Name**: "1Wave Points"
+- **Symbol**: "WAVE"
+- **Verified on**: Sourcify ✅
+
+For more deployment details, see [DEPLOYED.md](./DEPLOYED.md).
+
+---
+
 ## Architecture
 
 ```
@@ -302,6 +374,28 @@ AQUA_ADDRESS=0xYourAquaAddress forge script script/DeployWaveSwap.s.sol:DeployWa
   --verify
 ```
 
+### Deploy WavePointToken
+
+**Prerequisites:**
+- Set `PRIVATE_KEY` in `.env`
+- Set `MINTER_ADDRESS` in `.env` (address that will mint points)
+- Set `ACCESS_CONTROL_MANAGER_ADDRESS` in `.env` (governance contract)
+
+**Deploy:**
+```shell
+forge script script/DeployWavePointToken.s.sol:DeployWavePointToken \
+  --rpc-url <RPC_URL> \
+  --broadcast \
+  --verify
+```
+
+**Verify on Basescan:**
+```shell
+./verify-basescan.sh
+```
+
+See [DEPLOYED.md](./DEPLOYED.md) for verification details.
+
 ### Cast
 
 ```shell
@@ -326,9 +420,11 @@ cast --help
 
 ### Base Network
 - **Aqua Contract**: `0x499943E74FB0cE105688beeE8Ef2ABec5D936d31`
-- Deployed at block: `38281777`
+- **Aqua Deployed at block**: `38281777`
+- **WavePointToken**: `0xC9c9C776C45768Ce84ECb3526AE05d02AEFf290F`
 
 ## License
 
 - WaveSwap: LicenseRef-Degensoft-Aqua-Source-1.1
 - AquaAdapter: MIT
+- WavePointToken: GPL-3.0
